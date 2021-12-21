@@ -3,12 +3,11 @@ package io.quarkus.test.junit;
 import static io.quarkus.test.junit.IntegrationTestUtil.getAdditionalTestResources;
 
 import java.io.Closeable;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.*;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.logging.Handler;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.extension.AfterAllCallback;
@@ -130,6 +129,27 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
         result = null;
     }
 
+    private void setFinalStatic(Field field, Object newValue) throws Exception {
+        field.setAccessible(true);
+
+        Field modifiersField = Field.class.getDeclaredField("modifiers");
+        modifiersField.setAccessible(true);
+        modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL);
+
+        field.set(null, newValue);
+    }
+
+    private void flushAllLoggers() {
+        Enumeration<String> loggerNames = org.jboss.logmanager.LogContext.getLogContext().getLoggerNames();
+        while (loggerNames != null && loggerNames.hasMoreElements()) {
+            String loggerName = loggerNames.nextElement();
+            var logger = org.jboss.logmanager.LogContext.getLogContext().getLogger(loggerName);
+            for (Handler h : logger.getHandlers()) {
+                h.flush();
+            }
+        }
+    }
+
     private int doJavaStart(ExtensionContext context, Class<? extends QuarkusTestProfile> profile, String[] arguments)
             throws Exception {
         TracingHandler.quarkusStarting();
@@ -138,6 +158,9 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
             StartupAction startupAction = prepareResult.augmentAction.createInitialRuntimeApplication();
             Thread.currentThread().setContextClassLoader(startupAction.getClassLoader());
             QuarkusConsole.installRedirects();
+            flushAllLoggers();
+            setFinalStatic(org.jboss.logmanager.handlers.ConsoleHandler.class.getDeclaredField("out"),
+                    QuarkusConsole.REDIRECT_OUT);
 
             QuarkusTestProfile profileInstance = prepareResult.profileInstance;
 
@@ -157,7 +180,9 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
             hasPerTestResources = (boolean) testResourceManager.getClass().getMethod("hasPerTestResources")
                     .invoke(testResourceManager);
 
-            return startupAction.runMainClassBlocking(arguments);
+            var result = startupAction.runMainClassBlocking(arguments);
+            flushAllLoggers();
+            return result;
         } catch (Throwable e) {
 
             try {
@@ -169,6 +194,8 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
             }
             throw e;
         } finally {
+            setFinalStatic(org.jboss.logmanager.handlers.ConsoleHandler.class.getDeclaredField("out"),
+                    QuarkusConsole.ORIGINAL_OUT);
             QuarkusConsole.uninstallRedirects();
             if (originalCl != null) {
                 Thread.currentThread().setContextClassLoader(originalCl);
