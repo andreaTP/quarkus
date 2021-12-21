@@ -3,13 +3,12 @@ package io.quarkus.test.junit;
 import static io.quarkus.test.junit.IntegrationTestUtil.getAdditionalTestResources;
 
 import java.io.Closeable;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.*;
 import java.util.concurrent.LinkedBlockingDeque;
 
+import org.jboss.logmanager.handlers.ConsoleHandler;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.AfterEachCallback;
@@ -130,6 +129,16 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
         result = null;
     }
 
+    private void setFinalStatic(Field field, Object newValue) throws Exception {
+        field.setAccessible(true);
+
+        Field modifiersField = Field.class.getDeclaredField("modifiers");
+        modifiersField.setAccessible(true);
+        modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL);
+
+        field.set(null, newValue);
+    }
+
     private int doJavaStart(ExtensionContext context, Class<? extends QuarkusTestProfile> profile, String[] arguments)
             throws Exception {
         TracingHandler.quarkusStarting();
@@ -137,7 +146,31 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
         try {
             StartupAction startupAction = prepareResult.augmentAction.createInitialRuntimeApplication();
             Thread.currentThread().setContextClassLoader(startupAction.getClassLoader());
+
+            //            Enumeration<String> loggerNames = org.jboss.logmanager.LogContext.getLogContext().getLoggerNames();
+            //            // QuarkusConsole.ORIGINAL_OUT.println("DA QUI: " + loggerNames);
+            //            while (loggerNames != null && loggerNames.hasMoreElements()) {
+            //                String loggerName = loggerNames.nextElement();
+            //                var logger = org.jboss.logmanager.LogContext.getLogContext().getLogger(loggerName);
+            //                //                 org.jboss.logmanager.LogContext.getLogContext().getLogger(loggerName).clearHandlers();
+            //                // QuarkusConsole.ORIGINAL_OUT.println("LOGGER NAME: " + loggerName);
+            //                //                logger.clearHandlers();
+            //                for (Handler h : org.jboss.logmanager.LogContext.getLogContext().getLogger(loggerName).getHandlers()) {
+            //                    // QuarkusConsole.ORIGINAL_OUT.println("DA QUI: " + h);
+            //                    h.flush();
+            //                    //                    if (h instanceof QuarkusDelayedHandler) {
+            //                    //                        ((QuarkusDelayedHandler) h).clearHandlers();
+            //                    //                    }
+            //                    //                    if (h instanceof ConsoleHandler) {
+            //                    //                        QuarkusConsole.ORIGINAL_OUT.println("fixing console handler " + h);
+            //                    //                        ((ConsoleHandler) h).setOutputStream(QuarkusConsole.REDIRECT_OUT);
+            //                    //                    }
+            //                }
+            //            }
+
             QuarkusConsole.installRedirects();
+
+            setFinalStatic(ConsoleHandler.class.getDeclaredField("out"), QuarkusConsole.REDIRECT_OUT);
 
             QuarkusTestProfile profileInstance = prepareResult.profileInstance;
 
@@ -168,6 +201,7 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
             }
             throw e;
         } finally {
+            setFinalStatic(ConsoleHandler.class.getDeclaredField("out"), QuarkusConsole.ORIGINAL_OUT);
             QuarkusConsole.uninstallRedirects();
             if (originalCl != null) {
                 Thread.currentThread().setContextClassLoader(originalCl);
