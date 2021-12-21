@@ -129,7 +129,15 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
         result = null;
     }
 
-    private void setFinalStatic(Field field, Object newValue) throws Exception {
+    private static void setFinalStatic(Class clazz, Field field, Object newValue) throws Exception {
+        // WORKAROUND to prevent:
+        // "An illegal reflective access operation has occurred" warning to be shown
+        // this hack adds: --add-opens
+        // from: https://stackoverflow.com/questions/46454995/how-to-hide-warning-illegal-reflective-access-in-java-9-without-jvm-argument#comment110253314_46458447
+        clazz.getModule().addOpens(clazz.getPackageName(), QuarkusMainTestExtension.class.getModule());
+        java.lang.reflect.Field.class.getModule().addOpens(java.lang.reflect.Field.class.getPackageName(),
+                QuarkusMainTestExtension.class.getModule());
+
         field.setAccessible(true);
 
         Field modifiersField = Field.class.getDeclaredField("modifiers");
@@ -159,7 +167,8 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
             Thread.currentThread().setContextClassLoader(startupAction.getClassLoader());
             QuarkusConsole.installRedirects();
             flushAllLoggers();
-            setFinalStatic(org.jboss.logmanager.handlers.ConsoleHandler.class.getDeclaredField("out"),
+            setFinalStatic(org.jboss.logmanager.handlers.ConsoleHandler.class,
+                    org.jboss.logmanager.handlers.ConsoleHandler.class.getDeclaredField("out"),
                     QuarkusConsole.REDIRECT_OUT);
 
             QuarkusTestProfile profileInstance = prepareResult.profileInstance;
@@ -194,7 +203,8 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
             }
             throw e;
         } finally {
-            setFinalStatic(org.jboss.logmanager.handlers.ConsoleHandler.class.getDeclaredField("out"),
+            setFinalStatic(org.jboss.logmanager.handlers.ConsoleHandler.class,
+                    org.jboss.logmanager.handlers.ConsoleHandler.class.getDeclaredField("out"),
                     QuarkusConsole.ORIGINAL_OUT);
             QuarkusConsole.uninstallRedirects();
             if (originalCl != null) {
