@@ -3,12 +3,11 @@ package io.quarkus.test.junit;
 import static io.quarkus.test.junit.IntegrationTestUtil.getAdditionalTestResources;
 
 import java.io.Closeable;
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.logging.Handler;
 
+import org.jboss.logmanager.LogContext;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.AfterEachCallback;
@@ -129,22 +128,78 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
         result = null;
     }
 
-    private static void setFinalStatic(Class clazz, Field field, Object newValue) throws Exception {
-        // WORKAROUND to prevent:
-        // "An illegal reflective access operation has occurred" warning to be shown
-        // this hack adds: --add-opens
-        // from: https://stackoverflow.com/questions/46454995/how-to-hide-warning-illegal-reflective-access-in-java-9-without-jvm-argument#comment110253314_46458447
-        clazz.getModule().addOpens(clazz.getPackageName(), QuarkusMainTestExtension.class.getModule());
-        java.lang.reflect.Field.class.getModule().addOpens(java.lang.reflect.Field.class.getPackageName(),
-                QuarkusMainTestExtension.class.getModule());
+    private void patchConsoleHandler() throws Exception {
+        //        var rootLogger = LogContext.getLogContext().getLogger("");
+        //        var handlers = rootLogger.getHandlers();
+        //
+        //        var defaultConfig = "loggers=org.jboss.logmanager\n" +
+        //                "\n" +
+        //                "# Root logger\n" +
+        //                "logger.level=INFO\n" +
+        //                "logger.handlers=CONSOLE\n" +
+        //                "\n" +
+        //                "logger.org.jboss.logmanager.useParentHandlers=true\n" +
+        //                "logger.org.jboss.logmanager.level=INFO\n" +
+        //                "\n" +
+        //                "handler.CONSOLE=org.jboss.logmanager.handlers.ConsoleHandler\n" +
+        //                "handler.CONSOLE.formatter=PATTERN\n" +
+        //                "handler.CONSOLE.properties=autoFlush,target\n" +
+        //                "handler.CONSOLE.autoFlush=true\n" +
+        //                "handler.CONSOLE.target=SYSTEM_OUT\n" +
+        //                "\n" +
+        //                "formatter.PATTERN=org.jboss.logmanager.formatters.PatternFormatter\n" +
+        //                "formatter.PATTERN.properties=pattern\n" +
+        //                "formatter.PATTERN.pattern=PIPPO %d{HH:mm:ss,SSS} %-5p [%c] (%t) %s%E%n";
 
-        field.setAccessible(true);
+        //        LogManager.getLogManager().readConfiguration();
+        //        LogManager.getLogManager().readConfiguration();
+        //        LogManager.getLogManager().readConfiguration(new ByteArrayInputStream(defaultConfig.getBytes()));
 
-        Field modifiersField = Field.class.getDeclaredField("modifiers");
-        modifiersField.setAccessible(true);
-        modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL);
+        //        Logger root = LogManager.getLogManager().getLogger("");
+        //
+        //        var myHandler = new ConsoleHandler();
+        //        myHandler.setOutputStream(QuarkusConsole.REDIRECT_OUT);
+        //
+        //        root.addHandler(myHandler);
 
-        field.set(null, newValue);
+        //        Enumeration<String> loggerNames = org.jboss.logmanager.LogContext.getLogContext().getLoggerNames();
+        //        while (loggerNames != null && loggerNames.hasMoreElements()) {
+        //            String loggerName = loggerNames.nextElement();
+        //        for (Handler h : root.getHandlers()) {
+        //
+        //            QuarkusConsole.ORIGINAL_OUT.println("CIAO " + h.getClass());
+        //            recursivelyPatchHandlers(h);
+        //        }
+        //        }
+
+        //        LogManager.getLogManager().getLoggerNames()
+        //        for (var h : rootLogger.getHandlers()) {
+        //            recursivelyPatchHandlers(h);
+        //        }
+    }
+
+    //    private void recursivelyPatchHandlers(Handler handler) {
+    //        if (handler instanceof ConsoleHandler) {
+    //            ((ConsoleHandler) handler).setOutputStream(QuarkusConsole.REDIRECT_OUT);
+    //            for (var h : ((ConsoleHandler) handler).getHandlers()) {
+    //                recursivelyPatchHandlers(h);
+    //            }
+    //        } else if (handler instanceof QuarkusDelayedHandler) {
+    //            for (var h : ((QuarkusDelayedHandler) handler).getHandlers()) {
+    //                recursivelyPatchHandlers(h);
+    //            }
+    //        } else {
+    //            QuarkusConsole.ORIGINAL_OUT.println("DEBUG " + handler.getClass());
+    //        }
+    //    }
+
+    private void unpatchConsoleHandler() {
+        //        var rootLogger = LogContext.getLogContext().getLogger("");
+        //        var handlers = rootLogger.getHandlers();
+
+        //        for (var h : rootLogger.getHandlers()) {
+        //            recursivelyPatchHandlers(h);
+        //        }
     }
 
     private void flushAllLoggers() {
@@ -167,9 +222,10 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
             Thread.currentThread().setContextClassLoader(startupAction.getClassLoader());
             QuarkusConsole.installRedirects();
             flushAllLoggers();
-            setFinalStatic(org.jboss.logmanager.handlers.ConsoleHandler.class,
-                    org.jboss.logmanager.handlers.ConsoleHandler.class.getDeclaredField("out"),
-                    QuarkusConsole.REDIRECT_OUT);
+            patchConsoleHandler();
+            //            setFinalStatic(org.jboss.logmanager.handlers.ConsoleHandler.class,
+            //                    org.jboss.logmanager.handlers.ConsoleHandler.class.getDeclaredField("out"),
+            //                    QuarkusConsole.REDIRECT_OUT);
 
             QuarkusTestProfile profileInstance = prepareResult.profileInstance;
 
@@ -203,9 +259,7 @@ public class QuarkusMainTestExtension extends AbstractJvmQuarkusTestExtension
             }
             throw e;
         } finally {
-            setFinalStatic(org.jboss.logmanager.handlers.ConsoleHandler.class,
-                    org.jboss.logmanager.handlers.ConsoleHandler.class.getDeclaredField("out"),
-                    QuarkusConsole.ORIGINAL_OUT);
+            unpatchConsoleHandler();
             QuarkusConsole.uninstallRedirects();
             if (originalCl != null) {
                 Thread.currentThread().setContextClassLoader(originalCl);
