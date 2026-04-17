@@ -28,8 +28,8 @@ jobs:
       - name: Quick build
         run: ./mvnw ${{ env.COMMON_MAVEN_ARGS }} -Dquickly -T1C
       - name: Run GrpcDevModeTest (Windows)
-        run: >
-          ./mvnw ${{ env.COMMON_MAVEN_ARGS }}
-          verify -f extensions/grpc/deployment
-          -Dtest="GrpcDevModeTest#testProtoFileChangeReload+testProtoFileChangeAndImplementationReload"
-          -Dsurefire.rerunFailingTestsCount=0
+        shell: bash
+        run: |
+          ./mvnw $COMMON_MAVEN_ARGS verify -f extensions/grpc/deployment \
+            -Dtest="GrpcDevModeTest#testProtoFileChangeReload+testProtoFileChangeAndImplementationReload" \
+            -Dsurefire.rerunFailingTestsCount=0
